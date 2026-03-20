@@ -339,25 +339,9 @@ static void pfield_init_linetoscr (void)
 
 static void fill_line_8 (uae_u8 *buf, unsigned int start, unsigned int stop)
 {
-    uae_u8 *b = (uae_u8 *)buf;
-    unsigned int i;
-    unsigned int rem = 0;
-    xcolnr col = brdblank ? 0 : colors_for_drawing.acolors[0];
-    while (((long)&b[start]) & 3) {
-	b[start++] = (uae_u8)col;
-	if (start == stop)
-	   return;
-    }
-    if (((long)&b[stop]) & 3) {
-	rem = ((long)&b[stop]) & 3;
-	stop -= rem;
-    }
-    for (i = start; i < stop; i += 4) {
-	uae_u32 *b2 = (uae_u32 *)&b[i];
-	*b2 = col;
-    }
-    while (rem--)
-	b[stop++] = (uae_u8) col;
+    /* OPT: memset is the fastest way to fill with a repeated byte value */
+    uae_u8 col = (uae_u8)(brdblank ? 0 : colors_for_drawing.acolors[0]);
+    memset (buf + start, col, stop - start);
 }
 
 static void fill_line_16 (uae_u8 *buf, unsigned int start, unsigned int stop)
@@ -374,6 +358,7 @@ static void fill_line_16 (uae_u8 *buf, unsigned int start, unsigned int stop)
 	rem++;
 	stop--;
     }
+    /* OPT: write 4 bytes at a time (two pixels) */
     for (i = start; i < stop; i += 2) {
 	uae_u32 *b2 = (uae_u32 *)&b[i];
 	*b2 = col;
@@ -413,6 +398,13 @@ STATIC_INLINE void fill_line (void)
 #else
     val = colors_for_drawing.acolors[0];
 #endif
+
+    /* OPT: for 8-bit displays a single memset covers the whole line cheaply */
+    if (gfxvidinfo.pixbytes == 1) {
+	memset (start, (uae_u8)val, gfxvidinfo.width);
+	return;
+    }
+
     for (; nints > 0; nints -= 8, start += 8) {
 	*start = val;
 	*(start+1) = val;
@@ -1332,7 +1324,15 @@ STATIC_INLINE void pfield_draw_line (int lineno, int gfx_ypos, int follow_ypos)
     dp_for_drawing = line_decisions + lineno;
     dip_for_drawing = curr_drawinfo + lineno;
     mungedip (lineno);
+
+    /* OPT: handle the two most common states (already drawn) first so the
+     * compiler can generate an early-exit branch with no further work. */
     switch (linestate[lineno]) {
+    case LINE_DONE:
+	/* fall through */
+    case LINE_DONE_AS_PREVIOUS:
+	return;
+
     case LINE_REMEMBERED_AS_PREVIOUS:
 	if (!warned)
 	    write_log ("Shouldn't get here... this is a bug.\n"), warned++;
@@ -1355,11 +1355,6 @@ STATIC_INLINE void pfield_draw_line (int lineno, int gfx_ypos, int follow_ypos)
 	if (dp_for_drawing->plfleft == -1)
 	    border = 1;
 	break;
-
-    case LINE_DONE_AS_PREVIOUS:
-	/* fall through */
-    case LINE_DONE:
-	return;
 
     case LINE_DECIDED_DOUBLE:
 	if (follow_ypos != -1) {
@@ -1738,7 +1733,7 @@ if (y >= TD_PADY && y - TD_PADY < TD_NUM_HEIGHT) {
     write_tdnumber (tx, ty, 6);  tx += TD_NUM_WIDTH;   /* 6 */
 	write_tdnumber (tx, ty, 17); tx += TD_NUM_WIDTH;   /* . */
 	write_tdnumber (tx, ty, 6);  tx += TD_NUM_WIDTH;   /* 6 */
-	write_tdnumber (tx, ty, 3);  tx += TD_NUM_WIDTH;   /* 3 */
+	write_tdnumber (tx, ty, 4);  tx += TD_NUM_WIDTH;   /* 4 */
 }
 
 
@@ -1897,6 +1892,12 @@ void finish_drawing_frame (void)
 	    break;
 	if (where == -1)
 	    continue;
+
+	/* OPT: prefetch the next line map entry and its row buffer while
+	 * the current line is being drawn */
+	__builtin_prefetch (&amiga2aspect_line_map[i1 + 2], 0, 1);
+	if (where + 1 < gfxvidinfo.height)
+	    __builtin_prefetch (row_map[where + 1], 1, 0);
 
 	pfield_draw_line (line, where, amiga2aspect_line_map[i1 + 1]);
     }
