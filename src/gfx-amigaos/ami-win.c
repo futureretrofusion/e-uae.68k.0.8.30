@@ -193,114 +193,185 @@ extern struct IntuitionBase *IntuitionBase;
  * version 2 or (at your option) any later version.
  */
 
+/*
+ * ami_draw_dot — draw one lit dot of the dot-matrix logo.
+ * ox,oy = top-left origin of the character cell.
+ * col,row = 0-based column and row within the 5x7 grid.
+ * DOT_S = side length of each square dot in pixels.
+ * COL_P = column pitch (dot centre-to-centre horizontally).
+ * ROW_P = row pitch (dot centre-to-centre vertically).
+ */
+#define DOT_S  4    /* dot square size  */
+#define COL_P  9    /* column pitch px  */
+#define ROW_P 10    /* row pitch px     */
+
+static void ami_draw_dot(struct RastPort *rp, WORD ox, WORD oy, int col, int row)
+{
+    WORD x0 = ox + col * COL_P;
+    WORD y0 = oy + row * ROW_P;
+    RectFill(rp, x0, y0, x0 + DOT_S - 1, y0 + DOT_S - 1);
+}
+
+/*
+ * ami_draw_dm_char — render one 5x7 dot-matrix character.
+ * bitmap[7] holds the 7 rows, each row is a 5-bit mask (bit4=leftmost col).
+ */
+static void ami_draw_dm_char(struct RastPort *rp, WORD ox, WORD oy,
+                              const UBYTE bitmap[7])
+{
+    int row, col;
+    for (row = 0; row < 7; row++) {
+        UBYTE bits = bitmap[row];
+        for (col = 0; col < 5; col++) {
+            if (bits & (0x10 >> col))
+                ami_draw_dot(rp, ox, oy, col, row);
+        }
+    }
+}
+
+/*
+ * ami_draw_startup_splash — dot-matrix "E-UAE" logo + text credits.
+ *
+ * Logo metrics (pixels):
+ *   dot size   : DOT_S x DOT_S
+ *   col pitch  : COL_P   (between dot origins within a char)
+ *   row pitch  : ROW_P
+ *   char width : 5 * COL_P = 45 px
+ *   char gap   : 14 px    (space between characters)
+ *   char pitch : 45 + 14  = 59 px
+ *   5 chars    : 4 * 59 + 45 = 281 px total logo width
+ *   logo height: 6 * ROW_P + DOT_S = 64 px
+ */
 static void ami_draw_startup_splash(struct Window *win)
 {
     struct RastPort *rp;
     struct TextFont *oldFont = NULL;
     struct TextFont *newFont = NULL;
-    struct TextAttr ta;
+    struct TextAttr  ta;
 
+    /* --- 5x7 dot-matrix bitmaps (bit4 = leftmost column) ---
+     *
+     *  E : 11111 / 10000 / 10000 / 11110 / 10000 / 10000 / 11111
+     *  - : 00000 / 00000 / 00000 / 01110 / 00000 / 00000 / 00000
+     *  U : 10001 / 10001 / 10001 / 10001 / 10001 / 10001 / 01110
+     *  A : 01110 / 10001 / 10001 / 11111 / 10001 / 10001 / 10001
+     *  E : 11111 / 10000 / 10000 / 11110 / 10000 / 10000 / 11111
+     */
+    static const UBYTE dm_E[7] = {
+        0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F
+    };
+    static const UBYTE dm_DASH[7] = {
+        0x00, 0x00, 0x00, 0x0E, 0x00, 0x00, 0x00
+    };
+    static const UBYTE dm_U[7] = {
+        0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E
+    };
+    static const UBYTE dm_A[7] = {
+        0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11
+    };
+
+    /* pointers in order: E  -  U  A  E */
+    static const UBYTE * const dm_chars[5] = {
+        dm_E, dm_DASH, dm_U, dm_A, dm_E
+    };
+
+    /* --- credit / info lines (topaz 6) --- */
     const STRPTR l1 = (STRPTR)"E-UAE 68k 0.8.30 2026.64b";
-    const STRPTR l2 = (STRPTR)"****";
+    const STRPTR l2 = (STRPTR)"   ";
     const STRPTR l3 = (STRPTR)"(C)1995-2007 Richard Drummond et al.";
-    const STRPTR l4 = (STRPTR)"Modified (C) 2025-2026 Future Retro Fusion";
-    const STRPTR l5 = (STRPTR)"GPL v2+  ABSOLUTELY NO WARRANTY";
+    const STRPTR l4 = (STRPTR)"Mods (C)2025-2026 Future Retro Fusion";
+    const STRPTR l5 = (STRPTR)"GPL v2+ ABSOLUTELY NO WARRANTY";
     const STRPTR l6 = (STRPTR)"Redistributable GNU GPL";
 
-    const STRPTR a1 = (STRPTR)" ____   _   _   _     ____ ";
-    const STRPTR a2 = (STRPTR)"| ___| | | | | / \\   | ___|";
-    const STRPTR a3 = (STRPTR)"|  _|  | | | |/ _ \\  |  _| ";
-    const STRPTR a4 = (STRPTR)"|____|  \\___/_/ \\_\\ |____|";
-
-    LONG innerWidth, innerHeight;
-    WORD lineH, baseY, by, x;
+    LONG  innerWidth, innerHeight;
+    WORD  lineH;
+    WORD  logoW, logoH;
+    WORD  totalH, startY;
+    WORD  logoX, logoY;
+    WORD  textY, x;
+    int   gap, i;
 
     if (!win) return;
     rp = win->RPort;
     if (!rp) return;
 
-    /* Smallest safe resident font choice */
+    /* topaz 6 for the credit lines */
     ta.ta_Name  = (STRPTR)"topaz.font";
-    ta.ta_YSize = 8;
+    ta.ta_YSize = 6;
     ta.ta_Style = FS_NORMAL;
     ta.ta_Flags = 0;
 
     oldFont = rp->Font;
     newFont = OpenFont(&ta);
-    if (newFont)
-        SetFont(rp, newFont);
+    if (newFont) SetFont(rp, newFont);
 
     innerWidth  = win->Width  - win->BorderLeft - win->BorderRight;
     innerHeight = win->Height - win->BorderTop  - win->BorderBottom;
+    lineH = (rp->TxHeight > 0) ? rp->TxHeight : 6;
 
-    /* Tight vertical spacing */
-    lineH = (rp->TxHeight > 0) ? rp->TxHeight : 8;
+    /* logo pixel dimensions */
+    gap   = 14;                          /* px between chars          */
+    logoW = 4 * (5 * COL_P + gap) + 5 * COL_P;   /* = 4*59 + 45 = 281 px */
+    logoH = 6 * ROW_P + DOT_S;          /* = 64 px                   */
 
-    /* Clear */
+    /*
+     * Vertical layout:
+     *   logoH  (dot-matrix logo)
+     *   8 px   gap between logo and text
+     *   6 * lineH  (six credit lines)
+     */
+    totalH = logoH + 8 + 6 * lineH;
+    startY = win->BorderTop + (innerHeight - totalH) / 2;
+
+    /* --- Clear --- */
     SetAPen(rp, 0);
     RectFill(rp,
-             win->BorderLeft,
-             win->BorderTop,
+             win->BorderLeft,  win->BorderTop,
              win->Width  - 1 - win->BorderRight,
              win->Height - 1 - win->BorderBottom);
 
-    /* Outline box */
+    /* --- Outline box --- */
     SetAPen(rp, 1);
-    Move(rp, win->BorderLeft, win->BorderTop);
+    Move(rp, win->BorderLeft,  win->BorderTop);
     Draw(rp, win->Width  - 1 - win->BorderRight, win->BorderTop);
     Draw(rp, win->Width  - 1 - win->BorderRight, win->Height - 1 - win->BorderBottom);
-    Draw(rp, win->BorderLeft, win->Height - 1 - win->BorderBottom);
-    Draw(rp, win->BorderLeft, win->BorderTop);
+    Draw(rp, win->BorderLeft,  win->Height - 1 - win->BorderBottom);
+    Draw(rp, win->BorderLeft,  win->BorderTop);
 
-    /* 4 ASCII lines + 6 text lines */
-    {
-        const int totalLines = 10;
+    /* --- Dot-matrix logo --- */
+    logoX = win->BorderLeft + (innerWidth - logoW) / 2;
+    logoY = startY;
 
-        baseY = win->BorderTop
-        + (innerHeight - (totalLines * lineH)) / 2
-        + rp->TxBaseline;
-
-        by = baseY;
-
-        x = win->BorderLeft + (innerWidth - TextLength(rp, a1, strlen((char *)a1))) / 2;
-        Move(rp, x, by + (0 * lineH)); Text(rp, a1, strlen((char *)a1));
-
-        x = win->BorderLeft + (innerWidth - TextLength(rp, a2, strlen((char *)a2))) / 2;
-        Move(rp, x, by + (1 * lineH)); Text(rp, a2, strlen((char *)a2));
-
-        x = win->BorderLeft + (innerWidth - TextLength(rp, a3, strlen((char *)a3))) / 2;
-        Move(rp, x, by + (2 * lineH)); Text(rp, a3, strlen((char *)a3));
-
-        x = win->BorderLeft + (innerWidth - TextLength(rp, a4, strlen((char *)a4))) / 2;
-        Move(rp, x, by + (3 * lineH)); Text(rp, a4, strlen((char *)a4));
-
-        /* No extra blank line, just move to next block */
-        by += 4 * lineH;
-
-        x = win->BorderLeft + (innerWidth - TextLength(rp, l1, strlen((char *)l1))) / 2;
-        Move(rp, x, by + (0 * lineH)); Text(rp, l1, strlen((char *)l1));
-
-        x = win->BorderLeft + (innerWidth - TextLength(rp, l2, strlen((char *)l2))) / 2;
-        Move(rp, x, by + (1 * lineH)); Text(rp, l2, strlen((char *)l2));
-
-        x = win->BorderLeft + (innerWidth - TextLength(rp, l3, strlen((char *)l3))) / 2;
-        Move(rp, x, by + (2 * lineH)); Text(rp, l3, strlen((char *)l3));
-
-        x = win->BorderLeft + (innerWidth - TextLength(rp, l4, strlen((char *)l4))) / 2;
-        Move(rp, x, by + (3 * lineH)); Text(rp, l4, strlen((char *)l4));
-
-        x = win->BorderLeft + (innerWidth - TextLength(rp, l5, strlen((char *)l5))) / 2;
-        Move(rp, x, by + (4 * lineH)); Text(rp, l5, strlen((char *)l5));
-
-        x = win->BorderLeft + (innerWidth - TextLength(rp, l6, strlen((char *)l6))) / 2;
-        Move(rp, x, by + (5 * lineH)); Text(rp, l6, strlen((char *)l6));
+    SetAPen(rp, 1);
+    for (i = 0; i < 5; i++) {
+        WORD cx = logoX + i * (5 * COL_P + gap);
+        ami_draw_dm_char(rp, cx, logoY, dm_chars[i]);
     }
 
-    if (oldFont)
-        SetFont(rp, oldFont);
-    if (newFont)
-        CloseFont(newFont);
+    /* --- Credit lines --- */
+    textY = startY + logoH + 8;
+
+#define CREDIT(str, off) \
+    x = win->BorderLeft + (innerWidth - TextLength(rp, (str), strlen((char *)(str)))) / 2; \
+    Move(rp, x, textY + rp->TxBaseline + (off) * lineH); \
+    Text(rp, (str), strlen((char *)(str)));
+
+    CREDIT(l1, 0)
+    CREDIT(l2, 1)
+    CREDIT(l3, 2)
+    CREDIT(l4, 3)
+    CREDIT(l5, 4)
+    CREDIT(l6, 5)
+
+#undef CREDIT
+
+    if (oldFont) SetFont(rp, oldFont);
+    if (newFont) CloseFont(newFont);
 }
+
+#undef DOT_S
+#undef COL_P
+#undef ROW_P
 
 static void ami_show_startup_splash(void)
 {
@@ -318,7 +389,7 @@ static void ami_show_startup_splash(void)
     /* Centered, borderless popup box */
     {
         WORD width  = 340;
-        WORD height = 150;
+        WORD height = 160;   /* dot-matrix logo (64px) + 8px gap + 6 credit lines */
         WORD left   = (scr->Width  - width)  / 2;
         WORD top    = (scr->Height - height) / 2;
 
