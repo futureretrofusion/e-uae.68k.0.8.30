@@ -699,7 +699,7 @@ static uae_u32 fetched_aga1[MAX_PLANES];
 
 /* Expansions from bplcon0/bplcon1.  */
 static int toscr_res, toscr_nr_planes, fetchwidth;
-static int toscr_delay1x, toscr_delay2x, toscr_delay1, toscr_delay2;
+static int toscr_delay1, toscr_delay2;
 
 /* The number of bits left from the last fetched words.
    This is an optimization - conceptually, we have to make sure the result is
@@ -859,16 +859,21 @@ STATIC_INLINE void toscr_3_ecs (int nbits)
     int delay2 = toscr_delay2;
     int i;
     uae_u32 mask = 0xFFFF >> (16 - nbits);
+    /* Hoist loop-invariant shift amounts */
+    int shift1 = 16 - nbits + delay1;
+    int shift2 = 16 - nbits + delay2;
 
     for (i = 0; i < toscr_nr_planes; i += 2) {
-	outword[i] <<= nbits;
-	outword[i] |= (todisplay[i][0] >> (16 - nbits + delay1)) & mask;
-	todisplay[i][0] <<= nbits;
+	uae_u32 td = todisplay[i][0];
+	uae_u32 ow = outword[i];
+	outword[i] = (ow << nbits) | ((td >> shift1) & mask);
+	todisplay[i][0] = td << nbits;
     }
     for (i = 1; i < toscr_nr_planes; i += 2) {
-	outword[i] <<= nbits;
-	outword[i] |= (todisplay[i][0] >> (16 - nbits + delay2)) & mask;
-	todisplay[i][0] <<= nbits;
+	uae_u32 td = todisplay[i][0];
+	uae_u32 ow = outword[i];
+	outword[i] = (ow << nbits) | ((td >> shift2) & mask);
+	todisplay[i][0] = td << nbits;
     }
 }
 
@@ -904,12 +909,14 @@ STATIC_INLINE void toscr_3_aga (int nbits, int fm)
 	if (off1 == 3)
 	    off1 = 2;
 	offs -= off1 * 32;
+	/* offs is now in range [0,31]: replace uae_u64 shift with 32-bit ops.
+	   (t1<<32|t0) >> offs  ==  (t0 >> offs) | (t1 << (32 - offs))
+	   Special-case offs==0 to avoid undefined shift-by-32. */
 	for (i = 0; i < toscr_nr_planes; i += 2) {
 	    uae_u32 t0 = todisplay[i][off1];
 	    uae_u32 t1 = todisplay[i][off1 + 1];
-	    uae_u64 t = (((uae_u64)t1) << 32) | t0;
-	    outword[i] <<= nbits;
-	    outword[i] |= (t >> offs) & mask;
+	    uae_u32 val = (offs == 0) ? t0 : ((t0 >> offs) | (t1 << (32 - offs)));
+	    outword[i] = (outword[i] << nbits) | (val & mask);
 	    aga_shift (todisplay[i], nbits, fm);
 	}
     }
@@ -922,9 +929,8 @@ STATIC_INLINE void toscr_3_aga (int nbits, int fm)
 	for (i = 1; i < toscr_nr_planes; i += 2) {
 	    uae_u32 t0 = todisplay[i][off1];
 	    uae_u32 t1 = todisplay[i][off1 + 1];
-	    uae_u64 t = (((uae_u64)t1) << 32) | t0;
-	    outword[i] <<= nbits;
-	    outword[i] |= (t >> offs) & mask;
+	    uae_u32 val = (offs == 0) ? t0 : ((t0 >> offs) | (t1 << (32 - offs)));
+	    outword[i] = (outword[i] << nbits) | (val & mask);
 	    aga_shift (todisplay[i], nbits, fm);
 	}
     }
@@ -1065,7 +1071,11 @@ STATIC_INLINE void beginning_of_plane_block (int pos, int fm)
 
 #ifdef SPEEDUP
 
-/* The usual inlining tricks - don't touch unless you know what you are doing. */
+/* The usual inlining tricks - don't touch unless you know what you are doing.
+   weird_number_of_bits is always a compile-time constant (0 or 1) because
+   this function is only called via the NOINLINE wrappers below, which pass
+   a literal.  The compiler therefore eliminates the dead branch entirely in
+   each specialization, giving two distinct tight inner loops. */
 STATIC_INLINE void long_fetch_ecs (int plane, int nwords, int weird_number_of_bits, int dma)
 {
     uae_u16 *real_pt = (uae_u16 *)pfield_xlateptr (bplpt[plane] + bpl_off[plane], nwords * 2);
@@ -1091,6 +1101,8 @@ STATIC_INLINE void long_fetch_ecs (int plane, int nwords, int weird_number_of_bi
 
 	t = (shiftbuffer >> delay) & 0xFFFF;
 
+	/* weird_number_of_bits is a compile-time constant - the compiler
+	   removes the branch that doesn't apply in each NOINLINE wrapper. */
 	if (weird_number_of_bits && bits_left < 16) {
 	    outval <<= bits_left;
 	    outval |= t >> (16 - bits_left);
@@ -1157,9 +1169,10 @@ STATIC_INLINE void long_fetch_aga (int plane, int nwords, int weird_number_of_bi
 
 	    uae_u32 t0 = shiftbuffer[off1];
 	    uae_u32 t1 = shiftbuffer[off1 + 1];
-	    uae_u64 t = (((uae_u64)t1) << 32) | t0;
-
-	    t0 = (uae_u32)((t >> offs) & 0xFFFF);
+	    /* Replace uae_u64 shift with 32-bit equivalent: offs is in [0,31]
+	       after the off1 adjustment above. */
+	    uae_u32 tval = (offs == 0) ? t0 : ((t0 >> offs) | (t1 << (32 - offs)));
+	    t0 = tval & 0xFFFF;
 
 	    if (weird_number_of_bits && bits_left < 16) {
 		outval <<= bits_left;
@@ -4444,9 +4457,13 @@ void hsync_handler (void)
 	cycle_line[7] = CYCLE_REFRESH;
     }
 #endif
-    if ((currprefs.chipset_mask & CSMASK_AGA) || (!currprefs.chipset_mask & CSMASK_ECS_AGNUS))
-	last_custom_value = rand ();
-    else
+    if ((currprefs.chipset_mask & CSMASK_AGA) || (!currprefs.chipset_mask & CSMASK_ECS_AGNUS)) {
+	/* Fast LCG replaces rand() - saves a function call + global state lock
+	   every scanline while preserving the "indeterminate bus value" intent. */
+	static uae_u32 lcg_state = 12345;
+	lcg_state = lcg_state * 1664525u + 1013904223u;
+	last_custom_value = lcg_state >> 16;
+    } else
 	last_custom_value = 0xffff;
 
     if (!currprefs.blitter_cycle_exact && bltstate != BLT_done && dmaen (DMA_BITPLANE) && diwstate == DIW_waiting_stop)
