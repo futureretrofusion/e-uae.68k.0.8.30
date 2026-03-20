@@ -1,0 +1,51 @@
+# Future Retro Fusion
+# Build artefacts
+*.o
+*.a
+*.so
+*.dll
+*.dylib
+*.exe
+*.obj
+*.lib
+*.lo
+*.la
+
+# Generated files
+.deps/
+autom4te.cache/
+config.log
+config.status
+libtool
+stamp-h1
+Makefile
+
+# Editor / temp files
+*~
+*.swp
+*.swo
+*.tmp
+*.kate-swp
+*.bak
+*.orig
+*.rej
+*.old
+.DS_Store
+Thumbs.db
+
+# Local logs
+e-uae-debug*.txt
+e-uae-output.txt
+
+# Binary tools / builds
+uae
+uae-*
+readdisk
+
+
+# Host-built helper binaries
+src/tools/gencpu
+src/tools/gencomp
+src/tools/genlinetoscr
+src/tools/genblitter
+src/tools/build68k
