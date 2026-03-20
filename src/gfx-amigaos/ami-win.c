@@ -143,6 +143,15 @@
 void ami_pause_loop(void);
 /* FRF: after quick save/load, ignore hotkeys until Ctrl/LAlt released */
 static volatile int frf_block_hotkeys_until_release = 0;
+
+/* Weak stub for activate_debugger.
+ * ami-rexx.o references this unconditionally (compiled with DEBUGGER),
+ * but debugger.c is not in this build.  The weak attribute means the
+ * real symbol will silently win if debugger.c is ever linked back in. */
+void __attribute__((weak)) activate_debugger (void) {}
+
+#ifdef DEBUGGER
+#endif
 extern void frf_volume_set_percent(int percent);
 /* FRF: volume setter used by hotkey_adjust_volume()
  * Keep it in this TU so ami-win.o always links.
@@ -174,6 +183,16 @@ extern void rexx_handle_events (void);
 /* IntuitionBase is already declared globally elsewhere in ami-win.c */
 extern struct IntuitionBase *IntuitionBase;
 
+/* Modified by Future Retro Fusion on 2026-03-20.
+ * This file remains licensed under the GNU General Public License,
+ * version 2 or (at your option) any later version.
+ */
+
+/* Modified by Future Retro Fusion on 2026-03-20.
+ * This file remains licensed under the GNU General Public License,
+ * version 2 or (at your option) any later version.
+ */
+
 static void ami_draw_startup_splash(struct Window *win)
 {
     struct RastPort *rp;
@@ -181,46 +200,41 @@ static void ami_draw_startup_splash(struct Window *win)
     struct TextFont *newFont = NULL;
     struct TextAttr ta;
 
-    const STRPTR l1 = (STRPTR)"AmigaVM E-UAE 68k OS3.x";
-    const STRPTR l2 = (STRPTR)"0.8.30 2026.63 BETA";
-    const STRPTR l3 = (STRPTR)"(c) 1995-2007 Richard Drummond et al.";
-    const STRPTR l4 = (STRPTR)"(c)2025-2026 Future Retro Fusion";
+    const STRPTR l1 = (STRPTR)"E-UAE 68k 0.8.30 2026.64b";
+    const STRPTR l2 = (STRPTR)"****";
+    const STRPTR l3 = (STRPTR)"(C)1995-2007 Richard Drummond et al.";
+    const STRPTR l4 = (STRPTR)"Modified (C) 2025-2026 Future Retro Fusion";
+    const STRPTR l5 = (STRPTR)"GPL v2+  ABSOLUTELY NO WARRANTY";
+    const STRPTR l6 = (STRPTR)"Redistributable GNU GPL";
 
-    /* Simple ASCII logo (3 lines) */
-    /* Simple ASCII logo (4 lines) */
     const STRPTR a1 = (STRPTR)" ____   _   _   _     ____ ";
     const STRPTR a2 = (STRPTR)"| ___| | | | | / \\   | ___|";
     const STRPTR a3 = (STRPTR)"|  _|  | | | |/ _ \\  |  _| ";
-    const STRPTR a4 = (STRPTR)"|____|  \\___/_/ \\_ \\ |____|";
+    const STRPTR a4 = (STRPTR)"|____|  \\___/_/ \\_\\ |____|";
 
     LONG innerWidth, innerHeight;
-    WORD lineH, baseY;
-    WORD by;
-    WORD x;
+    WORD lineH, baseY, by, x;
 
     if (!win) return;
     rp = win->RPort;
     if (!rp) return;
 
-    /* ---- font pick (NO diskfont.library needed) ----
-     * OpenFont works for resident fonts (topaz.*).
-     * YSize 8 or 9 are the common Topaz sizes.
-     */
+    /* Smallest safe resident font choice */
     ta.ta_Name  = (STRPTR)"topaz.font";
-    ta.ta_YSize = 7;              /* change 8/9 to taste */
+    ta.ta_YSize = 8;
     ta.ta_Style = FS_NORMAL;
     ta.ta_Flags = 0;
 
     oldFont = rp->Font;
-    newFont = OpenFont(&ta);      /* <-- OpenFont, not OpenDiskFont */
+    newFont = OpenFont(&ta);
     if (newFont)
         SetFont(rp, newFont);
-    /* ---------------------------------------------- */
 
     innerWidth  = win->Width  - win->BorderLeft - win->BorderRight;
     innerHeight = win->Height - win->BorderTop  - win->BorderBottom;
 
-    lineH = (rp->TxHeight > 0 ? (rp->TxHeight + 2) : 12);
+    /* Tight vertical spacing */
+    lineH = (rp->TxHeight > 0) ? rp->TxHeight : 8;
 
     /* Clear */
     SetAPen(rp, 0);
@@ -238,52 +252,55 @@ static void ami_draw_startup_splash(struct Window *win)
     Draw(rp, win->BorderLeft, win->Height - 1 - win->BorderBottom);
     Draw(rp, win->BorderLeft, win->BorderTop);
 
-    /* Layout: 4 ASCII lines + gap + 4 text lines */
+    /* 4 ASCII lines + 6 text lines */
     {
-        const int totalLines = 4 + 1 + 4;
+        const int totalLines = 10;
+
         baseY = win->BorderTop
         + (innerHeight - (totalLines * lineH)) / 2
         + rp->TxBaseline;
 
         by = baseY;
 
-        /* ASCII banner */
-        x = win->BorderLeft + (innerWidth - TextLength(rp, a1, strlen((char*)a1))) / 2;
-        Move(rp, x, by + (0 * lineH)); Text(rp, a1, strlen((char*)a1));
+        x = win->BorderLeft + (innerWidth - TextLength(rp, a1, strlen((char *)a1))) / 2;
+        Move(rp, x, by + (0 * lineH)); Text(rp, a1, strlen((char *)a1));
 
-        x = win->BorderLeft + (innerWidth - TextLength(rp, a2, strlen((char*)a2))) / 2;
-        Move(rp, x, by + (1 * lineH)); Text(rp, a2, strlen((char*)a2));
+        x = win->BorderLeft + (innerWidth - TextLength(rp, a2, strlen((char *)a2))) / 2;
+        Move(rp, x, by + (1 * lineH)); Text(rp, a2, strlen((char *)a2));
 
-        x = win->BorderLeft + (innerWidth - TextLength(rp, a3, strlen((char*)a3))) / 2;
-        Move(rp, x, by + (2 * lineH)); Text(rp, a3, strlen((char*)a3));
+        x = win->BorderLeft + (innerWidth - TextLength(rp, a3, strlen((char *)a3))) / 2;
+        Move(rp, x, by + (2 * lineH)); Text(rp, a3, strlen((char *)a3));
 
-        x = win->BorderLeft + (innerWidth - TextLength(rp, a4, strlen((char*)a4))) / 2;
-        Move(rp, x, by + (3 * lineH)); Text(rp, a4, strlen((char*)a4));
+        x = win->BorderLeft + (innerWidth - TextLength(rp, a4, strlen((char *)a4))) / 2;
+        Move(rp, x, by + (3 * lineH)); Text(rp, a4, strlen((char *)a4));
 
-        /* gap line */
-        by += 5 * lineH;
+        /* No extra blank line, just move to next block */
+        by += 4 * lineH;
 
-        /* Text lines */
-        x = win->BorderLeft + (innerWidth - TextLength(rp, l1, strlen((char*)l1))) / 2;
-        Move(rp, x, by + (0 * lineH)); Text(rp, l1, strlen((char*)l1));
+        x = win->BorderLeft + (innerWidth - TextLength(rp, l1, strlen((char *)l1))) / 2;
+        Move(rp, x, by + (0 * lineH)); Text(rp, l1, strlen((char *)l1));
 
-        x = win->BorderLeft + (innerWidth - TextLength(rp, l2, strlen((char*)l2))) / 2;
-        Move(rp, x, by + (1 * lineH)); Text(rp, l2, strlen((char*)l2));
+        x = win->BorderLeft + (innerWidth - TextLength(rp, l2, strlen((char *)l2))) / 2;
+        Move(rp, x, by + (1 * lineH)); Text(rp, l2, strlen((char *)l2));
 
-        x = win->BorderLeft + (innerWidth - TextLength(rp, l3, strlen((char*)l3))) / 2;
-        Move(rp, x, by + (2 * lineH)); Text(rp, l3, strlen((char*)l3));
+        x = win->BorderLeft + (innerWidth - TextLength(rp, l3, strlen((char *)l3))) / 2;
+        Move(rp, x, by + (2 * lineH)); Text(rp, l3, strlen((char *)l3));
 
-        x = win->BorderLeft + (innerWidth - TextLength(rp, l4, strlen((char*)l4))) / 2;
-        Move(rp, x, by + (3 * lineH)); Text(rp, l4, strlen((char*)l4));
+        x = win->BorderLeft + (innerWidth - TextLength(rp, l4, strlen((char *)l4))) / 2;
+        Move(rp, x, by + (3 * lineH)); Text(rp, l4, strlen((char *)l4));
+
+        x = win->BorderLeft + (innerWidth - TextLength(rp, l5, strlen((char *)l5))) / 2;
+        Move(rp, x, by + (4 * lineH)); Text(rp, l5, strlen((char *)l5));
+
+        x = win->BorderLeft + (innerWidth - TextLength(rp, l6, strlen((char *)l6))) / 2;
+        Move(rp, x, by + (5 * lineH)); Text(rp, l6, strlen((char *)l6));
     }
 
-    /* restore */
     if (oldFont)
         SetFont(rp, oldFont);
     if (newFont)
         CloseFont(newFont);
 }
-
 
 static void ami_show_startup_splash(void)
 {
@@ -449,6 +466,32 @@ static void hotkey_adjust_volume(int dir)
 /* Quick state requests are executed inside the pause loop for safety */
 static volatile int pending_quick_save = 0;
 static volatile int pending_quick_load = 0;
+
+/* Filename buffer for GUI-requested save/load.
+ * Set by gui_request_save/load(), consumed by ami_pause_loop(). */
+static char gui_state_filename[512] = "";
+
+/* Called from ami-gui.c to safely schedule a state save.
+ * The actual savestate_quick() runs inside ami_pause_loop() on the next
+ * tick, never mid-frame, which avoids crashes from reentrancy. */
+void gui_request_save (const char *path)
+{
+    if (!path || !path[0])
+        return;
+    strncpy (gui_state_filename, path, sizeof (gui_state_filename) - 1);
+    gui_state_filename[sizeof (gui_state_filename) - 1] = '\0';
+    pending_quick_save = 1;
+}
+
+/* Called from ami-gui.c to safely schedule a state restore. */
+void gui_request_load (const char *path)
+{
+    if (!path || !path[0])
+        return;
+    strncpy (gui_state_filename, path, sizeof (gui_state_filename) - 1);
+    gui_state_filename[sizeof (gui_state_filename) - 1] = '\0';
+    pending_quick_load = 1;
+}
 /* === FRF: 3-char quickstate code (0-9 / A-Z) ===================== */
 
 /* Mode: 0 = idle, 1 = SAVE, 2 = LOAD */
@@ -638,9 +681,26 @@ static int scale_y = 1;
  * size when stretching is active. gfxvidinfo stays at native resolution. */
 static int display_w = 0;
 static int display_h = 0;
+
+/* Persists across open_display() (which zeroes display_w/h) so
+ * do_toggle_lores() can track which step of the 320->640->800->320
+ * cycle it is at. 0 = not yet toggled (initial state).             */
+static int last_display_w = 0;
+static int last_display_h = 0;
 static int pending_resize    = 0;  /* set in NEWSIZE, acted on next handle_events entry */
 static int pending_toggle_fs  = 0;  /* deferred toggle_fullscreen */
 static int pending_toggle_res = 0;  /* deferred toggle_lores */
+static int pending_screenmode = 0;  /* deferred screenmode requester */
+static int force_screenmode_req = 0; /* set to bypass get_displayid in setup_userscreen */
+
+/* Pause-on-focus-loss feature.
+ * Set ami_pause_focus_loss=1 before entering ami_pause_loop() via
+ * IDCMP_INACTIVEWINDOW so the loop auto-resumes on IDCMP_ACTIVEWINDOW.
+ * Disabled at runtime by setting env var UAE_NO_PAUSE_ON_FOCUS_LOSS=1
+ * in the shell before launching UAE (e.g.  SET UAE_NO_PAUSE_ON_FOCUS_LOSS 1). */
+#define UAE_NO_PAUSE_ENV "UAE_NO_PAUSE_ON_FOCUS_LOSS"
+static int ami_pause_focus_loss    = 0; /* set when pausing due to focus loss */
+static int ami_no_pause_on_focus_loss = -1; /* -1 = uninitialised */
 
 
 extern xcolnr xcolors[4096];
@@ -735,6 +795,10 @@ extern void closepseudodevices(void);
 extern void appw_init(struct Window *W);
 extern void appw_exit(void);
 extern void appw_events(void);
+
+extern void gui_toggle(void);        /* ami-gui.c - Ctrl+LAlt+B opens/closes GUI */
+extern void gui_handle_events(void); /* ami-gui.c - pump GUI IDCMP while paused */
+extern int  gui_screen_open;         /* ami-gui.c - 1 while GUI window is open  */
 
 extern int ievent_alive;
 
@@ -2023,6 +2087,13 @@ static int setup_userscreen (void)
 
     get_displayid (&DisplayID, &Depth);
 
+    /* When called from the GUI "Screen Mode..." button, always show the
+     * requester regardless of whether get_displayid found a valid mode.  */
+    if (force_screenmode_req) {
+        force_screenmode_req = 0;
+        DisplayID = (ULONG)INVALID_ID;
+    }
+
     if (DisplayID == (ULONG)INVALID_ID) {
 	if (AslRequestTags (ScreenRequest,
 			ASLSM_TitleText, (ULONG)"Select screen display mode",
@@ -2673,6 +2744,17 @@ void handle_events(void)
     } else if (pending_toggle_res) {
         pending_toggle_res = 0;
         do_toggle_lores ();
+    } else if (pending_screenmode) {
+        pending_screenmode = 0;
+        close_display ();
+        currprefs.amiga_screen_type     = UAESCREENTYPE_ASK;
+        changed_prefs.amiga_screen_type = UAESCREENTYPE_ASK;
+        if (!open_display ()) {
+            write_log ("DISPLAY: screenmode requester failed, reverting to public screen\n");
+            currprefs.amiga_screen_type     = UAESCREENTYPE_PUBLIC;
+            changed_prefs.amiga_screen_type = UAESCREENTYPE_PUBLIC;
+            open_display ();
+        }
     } else if (pending_resize) {
         pending_resize = 0;
         close_display ();
@@ -2798,6 +2880,12 @@ void handle_events(void)
                                     handled = 1;
                                 }
 
+                                /* GUI toggle: Ctrl+LAlt+B */
+                                if (!handled && keycode == 0x35 /* 'B' */) {
+                                    gui_toggle();
+                                    handled = 1;
+                                }
+
                                 /* Numpad-only: Ctrl+LAlt + KP7/KP8 volume, KP+/- frameskip */
                                 if (!handled && (qualifier & IEQUALIFIER_NUMERICPAD)) {
 
@@ -2898,6 +2986,21 @@ void handle_events(void)
 
                 case IDCMP_INACTIVEWINDOW:
                     inputdevice_unacquire ();
+                    /* Pause emulation when windowed and focus is lost.
+                     * In fullscreen (custom screen) we own the display so
+                     * there is nowhere else to focus — no pause needed.
+                     * Disabled when UAE_NO_PAUSE_ON_FOCUS_LOSS env var is set. */
+                    if (ami_no_pause_on_focus_loss < 0) {
+                        const char *e = getenv(UAE_NO_PAUSE_ENV);
+                        ami_no_pause_on_focus_loss = (e && e[0] != '0' && e[0] != '\0') ? 1 : 0;
+                        if (ami_no_pause_on_focus_loss)
+                            write_log("FOCUS: pause-on-focus-loss disabled (%s is set)\n", UAE_NO_PAUSE_ENV);
+                    }
+                    if (usepub && !ami_no_pause_on_focus_loss && !gui_screen_open
+                        && !pending_screenmode) {
+                        ami_pause_focus_loss = 1;
+                        ami_pause_loop ();
+                    }
                     break;
 
                 case IDCMP_INTUITICKS:
@@ -2918,6 +3021,25 @@ void handle_events(void)
         } /* end while(GetMsg) */
 
         appw_events();
+
+        /* --- GUI window: pump IDCMP events every frame --- */
+        gui_handle_events();
+
+        /* --- Service GUI-requested save/load safely here (end of frame) --- */
+        if (pending_quick_save && gui_state_filename[0]) {
+            pending_quick_save = 0;
+            savestate_initsave(gui_state_filename, 0);
+            gui_state_filename[0] = '\0';
+            savestate_quick(1, 1);
+            write_log("QUICKSTATE: GUI save complete\n");
+        }
+        if (pending_quick_load && gui_state_filename[0]) {
+            pending_quick_load = 0;
+            savestate_initsave(gui_state_filename, 0);
+            gui_state_filename[0] = '\0';
+            savestate_quick(1, 0);
+            write_log("QUICKSTATE: GUI load complete\n");
+        }
 
         /* --- Auto-sync frameskip HUD with prefs (keeps number + flash live) --- */
         {
@@ -3735,13 +3857,24 @@ void toggle_lores (void)
     pending_toggle_res = 1;
 }
 
+/* Called from ami-gui.c to open the ASL screen mode requester.
+ * Deferred to top of handle_events so CloseWindow is never called
+ * from inside an IntuiMessage handler.                             */
+void toggle_screenmode (void)
+{
+    pending_screenmode  = 1;
+    force_screenmode_req = 1;
+}
+
 static void do_toggle_lores (void)
 {
     int old_lores = currprefs.gfx_lores;
     int old_w     = currprefs.gfx_width_win;
     int old_h     = currprefs.gfx_height_win;
-    int old_dw    = scale_x;
-    int old_dh    = scale_y;
+    /* last_display_w/h persists across open_display() which zeroes display_w/h.
+     * On first call it is 0 — old_w <= 320 branch handles that correctly.   */
+    int old_dw    = last_display_w;
+    int old_dh    = last_display_h;
     int new_lores, new_w, new_h, new_dw, new_dh;
     int fullscreen = is_fullscreen ();
 
@@ -3784,8 +3917,10 @@ static void do_toggle_lores (void)
     changed_prefs.gfx_height_win = new_h;
     changed_prefs.gfx_width_fs   = new_w;
     changed_prefs.gfx_height_fs  = new_h;
-    display_w = new_dw;
-    display_h = new_dh;
+    display_w      = new_dw;
+    display_h      = new_dh;
+    last_display_w = new_dw;
+    last_display_h = new_dh;
 
     write_log ("DISPLAY: render %dx%d -> display %dx%d\n", new_w, new_h, new_dw, new_dh);
 
@@ -3802,8 +3937,10 @@ static void do_toggle_lores (void)
         changed_prefs.gfx_height_win = old_h;
         changed_prefs.gfx_width_fs   = old_w;
         changed_prefs.gfx_height_fs  = old_h;
-        display_w = old_dw;
-        display_h = old_dh;
+        display_w      = old_dw;
+        display_h      = old_dh;
+        last_display_w = old_dw;
+        last_display_h = old_dh;
         open_display ();
     }
 }
@@ -4053,6 +4190,10 @@ void ami_pause_loop(void)
         if (pending_quick_save) {
             pending_quick_save = 0;
             write_log("QUICKSTATE: performing SAVE in pause loop\n");
+            if (gui_state_filename[0]) {
+                savestate_initsave(gui_state_filename, 0);
+                gui_state_filename[0] = '\0';
+            }
             savestate_quick(1, 1);   /* slot 1, save */
 
             /* Prevent "stuck Ctrl+LAlt hotkey chord" after save */
@@ -4064,6 +4205,10 @@ void ami_pause_loop(void)
         if (pending_quick_load) {
             pending_quick_load = 0;
             write_log("QUICKSTATE: performing LOAD in pause loop\n");
+            if (gui_state_filename[0]) {
+                savestate_initsave(gui_state_filename, 0);
+                gui_state_filename[0] = '\0';
+            }
             savestate_quick(1, 0);   /* slot 1, load */
 
             /* Prevent "stuck Ctrl+LAlt hotkey chord" after load */
@@ -4073,7 +4218,12 @@ void ami_pause_loop(void)
         }
         /* ------------------------------------------------------- */
 
-        WaitPort(W->UserPort);
+        /* Yield CPU for one tick then poll for messages.
+         * Delay(1) is safe under Executive; WaitPort is not used here. */
+        Delay(1);
+
+        /* Pump GUI window events while paused so the GUI remains interactive */
+        gui_handle_events();
 
         struct IntuiMessage *im;
         while ((im = (struct IntuiMessage*)GetMsg(W->UserPort)) != NULL) {
@@ -4097,6 +4247,13 @@ void ami_pause_loop(void)
                         frf_block_hotkeys_until_release = 0;
                 }
 
+                /* Ctrl+LAlt+B: toggle GUI window even while paused */
+                if (down && sc == 0x35 &&
+                    (qualifier & (IEQUALIFIER_CONTROL | IEQUALIFIER_LALT))
+                        == (IEQUALIFIER_CONTROL | IEQUALIFIER_LALT)) {
+                    gui_toggle();
+                }
+
                 /* Unpause when the freeze hotkey is pressed again */
                 if (down && ev == INPUTEVENT_SPC_FREEZEBUTTON)
                     return;
@@ -4109,6 +4266,16 @@ void ami_pause_loop(void)
                 }
 
             } else {
+                /* Auto-resume when focus returns after a focus-loss pause */
+                if (ami_pause_focus_loss && im->Class == IDCMP_ACTIVEWINDOW) {
+                    ReplyMsg((struct Message*)im);
+                    /* Re-acquire input and clear stuck keys, same as normal focus-gain */
+                    inputdevice_acquire ();
+                    inputdevice_release_all_keys ();
+                    reset_hotkeys ();
+                    ami_pause_focus_loss = 0;
+                    return;
+                }
                 ReplyMsg((struct Message*)im);
             }
         }
